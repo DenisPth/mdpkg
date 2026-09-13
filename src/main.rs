@@ -3,7 +3,7 @@ mod core;
 mod utils;
 
 use crate::core::action::parse_action;
-use crate::core::{Action, BackendKind, EnvInfo};
+use crate::core::{Action, BackendKind, EnvInfo, Exec};
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use std::io::{IsTerminal, Write};
@@ -19,18 +19,30 @@ use std::io::{IsTerminal, Write};
                   -Syu                обновление системы/индексов (зависит от бэкенда)\n  \
                   -Q                  список установленных пакетов\n\n\
                   `--backend` (если используется) должен стоять перед OP.\n\n\
+                  Кроссдистро: `--backend flatpak` ставит из Flathub (работает \
+                  везде, где есть flatpak); `--backend xbps --container` (или \
+                  apt/pacman) запускает нужный менеджер внутри distrobox-\
+                  контейнера — так можно ставить, например, xbps-пакеты на Arch.\n\n\
                   Примеры:\n  \
                   multipkgdp -S firefox\n  \
                   multipkgdp -Rns firefox\n  \
                   multipkgdp -Ss firefox\n  \
                   multipkgdp -Syu\n  \
                   multipkgdp -Q\n  \
-                  multipkgdp --backend apt -Ss firefox"
+                  multipkgdp --backend apt -Ss firefox\n  \
+                  multipkgdp --backend flatpak -S org.videolan.VLC\n  \
+                  multipkgdp --backend xbps --container -S firefox"
 )]
 struct Cli {
     /// Переопределить автоопределение бэкенда (должно стоять перед OP)
     #[arg(long, value_enum)]
     backend: Option<BackendKind>,
+
+    /// Выполнить операцию внутри distrobox-контейнера для выбранного бэкенда
+    /// вместо хоста — нужно для пакетов "чужого" дистрибутива (например xbps
+    /// на Arch). Контейнер создаётся автоматически при первом использовании.
+    #[arg(long)]
+    container: bool,
 
     /// OP и его аргументы, например: -S firefox neovim
     #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
@@ -61,7 +73,22 @@ fn main() -> Result<()> {
             .unwrap_or_else(|| env.recommended_backend())
     };
 
-    let backend = backends::make_backend(backend_kind);
+    let exec = if cli.container {
+        let default_image = backend_kind.default_container_image().ok_or_else(|| {
+            anyhow!(
+                "`--container` не поддерживается для бэкенда `{}` (он не привязан к дистрибутиву)",
+                backend_kind.as_str()
+            )
+        })?;
+        let image = utils::container_image_for(backend_kind, default_image);
+        let name = backend_kind.container_name();
+        utils::ensure_distrobox_container(&name, &image)?;
+        Exec::Distrobox { container: name }
+    } else {
+        Exec::Local
+    };
+
+    let backend = backends::make_backend(backend_kind, exec);
     core::run(backend.as_ref(), &env, action)?;
     Ok(())
 }
@@ -96,6 +123,7 @@ fn backend_available(kind: BackendKind) -> bool {
         BackendKind::Apt => utils::command_exists("apt-get") || utils::command_exists("apt"),
         BackendKind::Pacman => utils::command_exists("pacman"),
         BackendKind::Xbps => utils::command_exists("xbps-install"),
+        BackendKind::Flatpak => utils::command_exists("flatpak"),
     }
 }
 
@@ -121,6 +149,11 @@ fn search_preview(kind: BackendKind, query: &str) -> Result<Vec<String>> {
                 return Err(anyhow!("не найдено `xbps-query` в PATH"));
             }
             utils::run_cmd_capture_stdout("xbps-query", ["-Rs", query])?
+        }
+        BackendKind::Flatpak => {
+            return Err(anyhow!(
+                "предпросмотр поиска для flatpak не используется в интерактивном выборе"
+            ));
         }
     };
 
@@ -156,6 +189,7 @@ fn try_bootstrap_backend_tools(selected: BackendKind, env: &EnvInfo) -> Result<(
         BackendKind::Apt => &["apt", "dpkg"],
         BackendKind::Xbps => &["xbps"],
         BackendKind::Pacman => &[],
+        BackendKind::Flatpak => &["flatpak"],
     };
     if pkgs.is_empty() {
         return Ok(());
@@ -167,6 +201,7 @@ fn try_bootstrap_backend_tools(selected: BackendKind, env: &EnvInfo) -> Result<(
             BackendKind::Apt => "apt-get/apt",
             BackendKind::Xbps => "xbps-install",
             BackendKind::Pacman => "pacman",
+            BackendKind::Flatpak => "flatpak",
         },
         pkgs.join(" ")
     );

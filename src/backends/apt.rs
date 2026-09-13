@@ -1,18 +1,19 @@
 use anyhow::{Result, anyhow};
 
-use crate::core::{Backend, BackendKind, EnvInfo};
-use crate::utils::{command_exists, run_cmd, run_cmd_sudo};
+use crate::core::{Backend, BackendKind, EnvInfo, Exec};
 
 #[derive(Debug, Default)]
-pub struct AptBackend;
+pub struct AptBackend {
+    exec: Exec,
+}
 
 impl AptBackend {
-    pub fn new() -> Self {
-        Self
+    pub fn with_exec(exec: Exec) -> Self {
+        Self { exec }
     }
 
     fn ensure_available(&self) -> Result<()> {
-        if command_exists("apt-get") {
+        if self.exec.command_exists("apt-get") {
             Ok(())
         } else {
             Err(anyhow!("не найдено `apt-get` в PATH"))
@@ -30,7 +31,7 @@ impl Backend for AptBackend {
         // apt-get install -y pkgs...
         let mut args = vec!["install".into(), "-y".into()];
         args.extend(packages.iter().cloned());
-        run_cmd_sudo("apt-get", args)
+        self.exec.run_sudo("apt-get", args)
     }
 
     fn remove(&self, _env: &EnvInfo, packages: &[String], flags: &str) -> Result<()> {
@@ -43,12 +44,12 @@ impl Backend for AptBackend {
         };
         let mut args = vec![subcmd.into(), "-y".into()];
         args.extend(packages.iter().cloned());
-        run_cmd_sudo("apt-get", args)?;
+        self.exec.run_sudo("apt-get", args)?;
 
         // `s` (в pacman: рекурсивно снести ненужные зависимости) — ближайший
         // аналог в apt это отдельный проход autoremove.
         if flags.contains('s') {
-            run_cmd_sudo("apt-get", ["autoremove", "-y"])?;
+            self.exec.run_sudo("apt-get", ["autoremove", "-y"])?;
         }
         Ok(())
     }
@@ -56,16 +57,16 @@ impl Backend for AptBackend {
     fn update(&self, _env: &EnvInfo) -> Result<()> {
         self.ensure_available()?;
         // apt-get update && apt-get upgrade -y
-        run_cmd_sudo("apt-get", ["update"])?;
-        run_cmd_sudo("apt-get", ["upgrade", "-y"])
+        self.exec.run_sudo("apt-get", ["update"])?;
+        self.exec.run_sudo("apt-get", ["upgrade", "-y"])
     }
 
     fn search(&self, _env: &EnvInfo, query: &str) -> Result<()> {
         // apt-cache search QUERY
-        if command_exists("apt-cache") {
-            run_cmd("apt-cache", ["search", query])
-        } else if command_exists("apt") {
-            run_cmd("apt", ["search", query])
+        if self.exec.command_exists("apt-cache") {
+            self.exec.run("apt-cache", ["search", query])
+        } else if self.exec.command_exists("apt") {
+            self.exec.run("apt", ["search", query])
         } else {
             Err(anyhow!("не найдено `apt-cache` или `apt` в PATH"))
         }
@@ -73,10 +74,10 @@ impl Backend for AptBackend {
 
     fn list(&self, _env: &EnvInfo) -> Result<()> {
         // dpkg -l
-        if command_exists("dpkg") {
-            run_cmd("dpkg", ["-l"])
-        } else if command_exists("apt") {
-            run_cmd("apt", ["list", "--installed"])
+        if self.exec.command_exists("dpkg") {
+            self.exec.run("dpkg", ["-l"])
+        } else if self.exec.command_exists("apt") {
+            self.exec.run("apt", ["list", "--installed"])
         } else {
             Err(anyhow!("не найдено `dpkg` или `apt` в PATH"))
         }

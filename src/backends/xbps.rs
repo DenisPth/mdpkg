@@ -1,18 +1,19 @@
 use anyhow::{Result, anyhow};
 
-use crate::core::{Backend, BackendKind, EnvInfo};
-use crate::utils::{command_exists, run_cmd, run_cmd_sudo};
+use crate::core::{Backend, BackendKind, EnvInfo, Exec};
 
 #[derive(Debug, Default)]
-pub struct XbpsBackend;
+pub struct XbpsBackend {
+    exec: Exec,
+}
 
 impl XbpsBackend {
-    pub fn new() -> Self {
-        Self
+    pub fn with_exec(exec: Exec) -> Self {
+        Self { exec }
     }
 
     fn ensure_available(&self) -> Result<()> {
-        if command_exists("xbps-install") {
+        if self.exec.command_exists("xbps-install") {
             Ok(())
         } else {
             Err(anyhow!("не найдено `xbps-install` в PATH"))
@@ -30,7 +31,7 @@ impl Backend for XbpsBackend {
         // xbps-install -y pkgs...
         let mut args = vec!["-y".into()];
         args.extend(packages.iter().cloned());
-        run_cmd_sudo("xbps-install", args)
+        self.exec.run_sudo("xbps-install", args)
     }
 
     fn remove(&self, _env: &EnvInfo, packages: &[String], _flags: &str) -> Result<()> {
@@ -39,19 +40,19 @@ impl Backend for XbpsBackend {
         // сироты-зависимости через -R, отдельных суффиксов как в pacman у него нет.
         let mut args = vec!["-Ry".into()];
         args.extend(packages.iter().cloned());
-        run_cmd_sudo("xbps-remove", args)
+        self.exec.run_sudo("xbps-remove", args)
     }
 
     fn update(&self, _env: &EnvInfo) -> Result<()> {
         self.ensure_available()?;
         // xbps-install -Syu
-        run_cmd_sudo("xbps-install", ["-Syu"])
+        self.exec.run_sudo("xbps-install", ["-Syu"])
     }
 
     fn search(&self, _env: &EnvInfo, query: &str) -> Result<()> {
         // xbps-query -Rs QUERY
-        if command_exists("xbps-query") {
-            run_cmd("xbps-query", ["-Rs", query])
+        if self.exec.command_exists("xbps-query") {
+            self.exec.run("xbps-query", ["-Rs", query])
         } else {
             Err(anyhow!("не найдено `xbps-query` в PATH"))
         }
@@ -59,8 +60,8 @@ impl Backend for XbpsBackend {
 
     fn list(&self, _env: &EnvInfo) -> Result<()> {
         // xbps-query -l
-        if command_exists("xbps-query") {
-            run_cmd("xbps-query", ["-l"])
+        if self.exec.command_exists("xbps-query") {
+            self.exec.run("xbps-query", ["-l"])
         } else {
             Err(anyhow!("не найдено `xbps-query` в PATH"))
         }
