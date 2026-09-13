@@ -1,8 +1,8 @@
 [package]
 name = "multipkgdp"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
-description = "Pacman-style CLI that routes package operations to multiple Linux package manager backends (pacman/apt/xbps)."
+description = "Pacman-style CLI that routes package operations to multiple Linux package manager backends (pacman/apt/xbps/flatpak), with distrobox-based cross-distro support."
 
 [[bin]]
 name = "multipkgdp"
@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 etc-os-release = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"

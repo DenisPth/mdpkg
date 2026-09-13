@@ -32,6 +32,11 @@ It provides a unified CLI over system package managers such as:
 - Manual backend override with `--backend` (must come before the operation).  
 - pacman‑style commands: `-S`, `-R...`, `-Ss`, `-Syu`, `-Q`.  
 - Shows OS info and the backend in use on `install`/`remove`/`update`.
+- `-Ss <query>` with no explicit `--backend` searches **every** installed
+  backend at once (apt/pacman/xbps/flatpak) and prints each result set under
+  a `==> backend` header — pass `--backend` to search just one.
+- `--generate-completions <bash|zsh|fish|elvish|powershell>` prints a shell
+  completion script to stdout.
 - `-R<flags>` forwards the suffix to the backend: exact pass‑through on `pacman`
   (e.g. `-Rns` → `pacman -Rns`); on `apt`, `n` maps to `purge` and `s` triggers
   an extra `autoremove` pass; `xbps` always does a recursive removal regardless
@@ -85,6 +90,8 @@ multipkgdp -Q
 multipkgdp --backend pacman -S firefox
 multipkgdp --backend flatpak -S org.videolan.VLC
 multipkgdp --backend xbps --container -S firefox   # xbps package on a non-Void host
+multipkgdp -Ss firefox                             # searches every installed backend
+multipkgdp --generate-completions zsh > _multipkgdp
 ```
 
 ---
@@ -104,6 +111,11 @@ multipkgdp --backend xbps --container -S firefox   # xbps package on a non-Void 
 - Явное указание backend'а через `--backend` (должен стоять перед операцией).  
 - Pacman-style команды: `-S`, `-R...`, `-Ss`, `-Syu`, `-Q`.  
 - Вывод информации об ОС и используемом бэкенде при `install`/`remove`/`update`.
+- `-Ss <query>` без явного `--backend` ищет сразу **во всех** установленных
+  бэкендах (apt/pacman/xbps/flatpak) и печатает каждый результат под
+  заголовком `==> backend` — укажи `--backend`, чтобы искать только в одном.
+- `--generate-completions <bash|zsh|fish|elvish|powershell>` выводит скрипт
+  автодополнения в stdout.
 - `-R<флаги>` пробрасывается в бэкенд: на `pacman` — один в один (например
   `-Rns` → `pacman -Rns`); на `apt` — `n` превращается в `purge`, а `s`
   запускает дополнительный проход `autoremove`; `xbps` всегда делает
@@ -157,6 +169,8 @@ multipkgdp -Q
 multipkgdp --backend pacman -S firefox
 multipkgdp --backend flatpak -S org.videolan.VLC
 multipkgdp --backend xbps --container -S firefox   # xbps-пакет не на Void
+multipkgdp -Ss firefox                             # ищет во всех установленных бэкендах
+multipkgdp --generate-completions zsh > _multipkgdp
 ```
 
 ---

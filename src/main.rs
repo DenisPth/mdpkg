@@ -5,13 +5,15 @@ mod utils;
 use crate::core::action::parse_action;
 use crate::core::{Action, BackendKind, EnvInfo, Exec};
 use anyhow::{Result, anyhow};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::Shell;
 use std::io::{IsTerminal, Write};
 
 /// Pacman-style CLI, маршрутизирующий операции в apt/pacman/xbps.
 #[derive(Parser, Debug)]
 #[command(
     name = "multipkgdp",
+    version,
     after_help = "Где OP — pacman-style операция:\n  \
                   -S <pkg...>         установить пакет(ы)\n  \
                   -R... <pkg...>      удалить пакет(ы) (например: -Rns)\n  \
@@ -31,7 +33,9 @@ use std::io::{IsTerminal, Write};
                   multipkgdp -Q\n  \
                   multipkgdp --backend apt -Ss firefox\n  \
                   multipkgdp --backend flatpak -S org.videolan.VLC\n  \
-                  multipkgdp --backend xbps --container -S firefox"
+                  multipkgdp --backend xbps --container -S firefox\n  \
+                  multipkgdp -Ss firefox                    # ищет во всех доступных бэкендах сразу\n  \
+                  multipkgdp --generate-completions zsh > _multipkgdp"
 )]
 struct Cli {
     /// Переопределить автоопределение бэкенда (должно стоять перед OP)
@@ -44,19 +48,42 @@ struct Cli {
     #[arg(long)]
     container: bool,
 
+    /// Вывести скрипт автодополнения для шелла в stdout и выйти
+    #[arg(long, value_enum)]
+    generate_completions: Option<Shell>,
+
     /// OP и его аргументы, например: -S firefox neovim
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     rest: Vec<String>,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    if let Some(shell) = cli.generate_completions {
+        let mut cmd = Cli::command();
+        let bin_name = cmd.get_name().to_string();
+        clap_complete::generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
+        return Ok(());
+    }
+
     let mut rest = cli.rest.into_iter();
-    let op = rest.next().expect("clap enforced non-empty `rest`");
+    let op = rest
+        .next()
+        .ok_or_else(|| anyhow!("не указана операция (например `-S` или `-Rns`)"))?;
     let op_args: Vec<String> = rest.collect();
 
     let action = parse_action(&op, op_args)?;
     let env = EnvInfo::detect()?;
+
+    // `-Ss` без явного `--backend` ищет сразу во всех доступных бэкендах —
+    // это и есть смысл "мульти-бэкенд" пакетного менеджера.
+    if let Action::Search { query } = &action
+        && cli.backend.is_none()
+        && !cli.container
+    {
+        return run_unified_search(&env, query);
+    }
 
     // Если пользователь не указал --backend и делает `-S <onepkg>`,
     // сначала поищем пакет по имени в бэкендах и предложим выбрать.
@@ -116,6 +143,39 @@ fn single_package_name(action: &Action) -> Option<&str> {
         Action::Install { packages } => packages.first().map(|s| s.as_str()),
         _ => None,
     }
+}
+
+/// Ищет пакет во всех бэкендах, утилиты которых есть в PATH, и печатает
+/// результаты блоками, помеченными названием бэкенда.
+fn run_unified_search(env: &EnvInfo, query: &str) -> Result<()> {
+    let kinds = [
+        BackendKind::Pacman,
+        BackendKind::Apt,
+        BackendKind::Xbps,
+        BackendKind::Flatpak,
+    ];
+
+    let available: Vec<BackendKind> = kinds
+        .into_iter()
+        .filter(|k| backend_available(*k))
+        .collect();
+    if available.is_empty() {
+        return Err(anyhow!(
+            "не найдено ни одного установленного бэкенда (apt/pacman/xbps/flatpak) для поиска"
+        ));
+    }
+
+    for (i, kind) in available.iter().enumerate() {
+        if i > 0 {
+            println!();
+        }
+        println!("==> {}", kind.as_str());
+        let backend = backends::make_backend(*kind, Exec::Local);
+        if let Err(e) = backend.search(env, query) {
+            eprintln!("  (ошибка: {e})");
+        }
+    }
+    Ok(())
 }
 
 fn backend_available(kind: BackendKind) -> bool {
