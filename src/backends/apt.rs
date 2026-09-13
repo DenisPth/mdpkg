@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::core::{Backend, BackendKind, EnvInfo};
 use crate::utils::{command_exists, run_cmd, run_cmd_sudo};
@@ -33,12 +33,24 @@ impl Backend for AptBackend {
         run_cmd_sudo("apt-get", args)
     }
 
-    fn remove(&self, _env: &EnvInfo, packages: &[String]) -> Result<()> {
+    fn remove(&self, _env: &EnvInfo, packages: &[String], flags: &str) -> Result<()> {
         self.ensure_available()?;
-        // apt-get remove -y pkgs...
-        let mut args = vec!["remove".into(), "-y".into()];
+        // `n` (в pacman: не сохранять бэкапы/конфиги) ближе всего к `purge` в apt.
+        let subcmd = if flags.contains('n') {
+            "purge"
+        } else {
+            "remove"
+        };
+        let mut args = vec![subcmd.into(), "-y".into()];
         args.extend(packages.iter().cloned());
-        run_cmd_sudo("apt-get", args)
+        run_cmd_sudo("apt-get", args)?;
+
+        // `s` (в pacman: рекурсивно снести ненужные зависимости) — ближайший
+        // аналог в apt это отдельный проход autoremove.
+        if flags.contains('s') {
+            run_cmd_sudo("apt-get", ["autoremove", "-y"])?;
+        }
+        Ok(())
     }
 
     fn update(&self, _env: &EnvInfo) -> Result<()> {

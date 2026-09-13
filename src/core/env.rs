@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use etc_os_release::OsRelease;
 
 use super::backend::BackendKind;
@@ -110,7 +110,9 @@ fn parse_os_release(input: &str) -> BTreeMap<String, String> {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let Some((k, v)) = line.split_once('=') else { continue };
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
         let k = k.trim();
         let v = v.trim();
         let v = unquote(v);
@@ -128,4 +130,71 @@ fn unquote(s: &str) -> String {
         return s[1..s.len() - 1].to_string();
     }
     s.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env_with(id: &str, id_like: &str) -> EnvInfo {
+        let mut os_release = BTreeMap::new();
+        os_release.insert("ID".to_string(), id.to_string());
+        if !id_like.is_empty() {
+            os_release.insert("ID_LIKE".to_string(), id_like.to_string());
+        }
+        EnvInfo {
+            os_release,
+            kernel: "test".to_string(),
+        }
+    }
+
+    #[test]
+    fn parses_quoted_and_unquoted_values() {
+        let m = parse_os_release(
+            "ID=arch\nPRETTY_NAME=\"Arch Linux\"\n# comment\n\nNAME='Arch Linux'\n",
+        );
+        assert_eq!(m.get("ID").map(String::as_str), Some("arch"));
+        assert_eq!(m.get("PRETTY_NAME").map(String::as_str), Some("Arch Linux"));
+        assert_eq!(m.get("NAME").map(String::as_str), Some("Arch Linux"));
+    }
+
+    #[test]
+    fn recommends_xbps_for_void() {
+        assert_eq!(
+            env_with("void", "").recommended_backend(),
+            BackendKind::Xbps
+        );
+    }
+
+    #[test]
+    fn recommends_pacman_for_arch_family() {
+        assert_eq!(
+            env_with("arch", "").recommended_backend(),
+            BackendKind::Pacman
+        );
+        assert_eq!(
+            env_with("manjaro", "").recommended_backend(),
+            BackendKind::Pacman
+        );
+        assert_eq!(
+            env_with("endeavouros", "arch").recommended_backend(),
+            BackendKind::Pacman
+        );
+    }
+
+    #[test]
+    fn defaults_to_apt_for_debian_family() {
+        assert_eq!(
+            env_with("debian", "").recommended_backend(),
+            BackendKind::Apt
+        );
+        assert_eq!(
+            env_with("ubuntu", "debian").recommended_backend(),
+            BackendKind::Apt
+        );
+        assert_eq!(
+            env_with("unknown-distro", "").recommended_backend(),
+            BackendKind::Apt
+        );
+    }
 }

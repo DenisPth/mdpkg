@@ -18,28 +18,32 @@ It provides a unified CLI over system package managers such as:
 ### Features
 
 - Auto‑detect OS and choose backend (`apt`, `pacman`, `xbps`).  
-- Manual backend override with `--backend`.  
-- Common commands: `install`, `remove`, `update`, `search`, `list`.  
-- Show OS info and used repo on each install.
+- Manual backend override with `--backend` (must come before the operation).  
+- pacman‑style commands: `-S`, `-R...`, `-Ss`, `-Syu`, `-Q`.  
+- Shows OS info and the backend in use on `install`/`remove`/`update`.
+- `-R<flags>` forwards the suffix to the backend: exact pass‑through on `pacman`
+  (e.g. `-Rns` → `pacman -Rns`); on `apt`, `n` maps to `purge` and `s` triggers
+  an extra `autoremove` pass; `xbps` always does a recursive removal regardless
+  of the suffix.
 
 ### Installation (from sources)
 
 ```bash
 git clone https://github.com/DenisPth/mdpkg.git
 cd mdpkg
-cargo build --release
-sudo cp target/release/multipkgdp /usr/local/bin/
+./install.sh                # builds a release binary and installs it,
+                             # plus `mdpkg`/`mpdpg` symlinks, into /usr/local/bin
 ```
 
 ### Usage
 
 ```bash
-multipkgdp install firefox neovim
-multipkgdp remove firefox
-multipkgdp update
-multipkgdp search firefox
-multipkgdp list
-multipkgdp --backend pacman install firefox
+multipkgdp -S firefox neovim
+multipkgdp -Rns firefox
+multipkgdp -Syu
+multipkgdp -Ss firefox
+multipkgdp -Q
+multipkgdp --backend pacman -S firefox
 ```
 
 ---
@@ -56,28 +60,32 @@ multipkgdp --backend pacman install firefox
 ### Возможности
 
 - Автоопределение дистрибутива и выбор backend'а (`apt`, `pacman`, `xbps`).  
-- Явное указание backend'а через `--backend`.  
-- Единый CLI: `install`, `remove`, `update`, `search`, `list`.  
-- Вывод информации об ОС и используемом репозитории при установке.
+- Явное указание backend'а через `--backend` (должен стоять перед операцией).  
+- Pacman-style команды: `-S`, `-R...`, `-Ss`, `-Syu`, `-Q`.  
+- Вывод информации об ОС и используемом бэкенде при `install`/`remove`/`update`.
+- `-R<флаги>` пробрасывается в бэкенд: на `pacman` — один в один (например
+  `-Rns` → `pacman -Rns`); на `apt` — `n` превращается в `purge`, а `s`
+  запускает дополнительный проход `autoremove`; `xbps` всегда делает
+  рекурсивное удаление независимо от суффикса.
 
 ### Установка (из исходников)
 
 ```bash
 git clone https://github.com/DenisPth/mdpkg.git
 cd mdpkg
-cargo build --release
-sudo cp target/release/multipkgdp /usr/local/bin/
+./install.sh                # соберёт release-бинарник и поставит его,
+                             # а также симлинки `mdpkg`/`mpdpg`, в /usr/local/bin
 ```
 
 ### Использование
 
 ```bash
-multipkgdp install firefox neovim
-multipkgdp remove firefox
-multipkgdp update
-multipkgdp search firefox
-multipkgdp list
-multipkgdp --backend pacman install firefox
+multipkgdp -S firefox neovim
+multipkgdp -Rns firefox
+multipkgdp -Syu
+multipkgdp -Ss firefox
+multipkgdp -Q
+multipkgdp --backend pacman -S firefox
 ```
 
 ---
@@ -87,3 +95,9 @@ multipkgdp --backend pacman install firefox
 `multipkgdp` is a Rust-written multi-backend package manager for Linux (apt, pacman, xbps, etc.) with a unified CLI, OS auto‑detection and backend choice.
 
 This is the foundation for `mdpkg` project under `DenisPth` on GitHub.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

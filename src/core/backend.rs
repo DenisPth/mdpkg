@@ -26,7 +26,10 @@ pub trait Backend: Send + Sync {
     fn kind(&self) -> BackendKind;
 
     fn install(&self, env: &EnvInfo, packages: &[String]) -> Result<()>;
-    fn remove(&self, env: &EnvInfo, packages: &[String]) -> Result<()>;
+    /// `flags` — суффикс из `-R<flags>` как ввёл пользователь (например `"ns"` для `-Rns`,
+    /// пустая строка для голого `-R`). Бэкенды вольны использовать его как имеет смысл
+    /// для своего пакетного менеджера (см. реализации в `backends/`).
+    fn remove(&self, env: &EnvInfo, packages: &[String], flags: &str) -> Result<()>;
     fn update(&self, env: &EnvInfo) -> Result<()>;
     fn search(&self, env: &EnvInfo, query: &str) -> Result<()>;
     fn list(&self, env: &EnvInfo) -> Result<()>;

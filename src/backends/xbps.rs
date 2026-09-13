@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::core::{Backend, BackendKind, EnvInfo};
 use crate::utils::{command_exists, run_cmd, run_cmd_sudo};
@@ -33,9 +33,10 @@ impl Backend for XbpsBackend {
         run_cmd_sudo("xbps-install", args)
     }
 
-    fn remove(&self, _env: &EnvInfo, packages: &[String]) -> Result<()> {
+    fn remove(&self, _env: &EnvInfo, packages: &[String], _flags: &str) -> Result<()> {
         self.ensure_available()?;
-        // xbps-remove -Ry pkgs...
+        // xbps-remove -Ry pkgs... — xbps-remove уже всегда рекурсивно чистит
+        // сироты-зависимости через -R, отдельных суффиксов как в pacman у него нет.
         let mut args = vec!["-Ry".into()];
         args.extend(packages.iter().cloned());
         run_cmd_sudo("xbps-remove", args)
