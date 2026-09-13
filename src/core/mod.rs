@@ -1,10 +1,12 @@
 pub mod action;
 pub mod backend;
 pub mod env;
+pub mod exec;
 
 pub use action::Action;
 pub use backend::{Backend, BackendKind};
 pub use env::EnvInfo;
+pub use exec::Exec;
 
 use anyhow::Result;
 

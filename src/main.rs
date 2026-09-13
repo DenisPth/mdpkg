@@ -3,15 +3,17 @@ mod core;
 mod utils;
 
 use crate::core::action::parse_action;
-use crate::core::{Action, BackendKind, EnvInfo};
+use crate::core::{Action, BackendKind, EnvInfo, Exec};
 use anyhow::{Result, anyhow};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::Shell;
 use std::io::{IsTerminal, Write};
 
 /// Pacman-style CLI, маршрутизирующий операции в apt/pacman/xbps.
 #[derive(Parser, Debug)]
 #[command(
     name = "multipkgdp",
+    version,
     after_help = "Где OP — pacman-style операция:\n  \
                   -S <pkg...>         установить пакет(ы)\n  \
                   -R... <pkg...>      удалить пакет(ы) (например: -Rns)\n  \
@@ -19,32 +21,69 @@ use std::io::{IsTerminal, Write};
                   -Syu                обновление системы/индексов (зависит от бэкенда)\n  \
                   -Q                  список установленных пакетов\n\n\
                   `--backend` (если используется) должен стоять перед OP.\n\n\
+                  Кроссдистро: `--backend flatpak` ставит из Flathub (работает \
+                  везде, где есть flatpak); `--backend xbps --container` (или \
+                  apt/pacman) запускает нужный менеджер внутри distrobox-\
+                  контейнера — так можно ставить, например, xbps-пакеты на Arch.\n\n\
                   Примеры:\n  \
                   multipkgdp -S firefox\n  \
                   multipkgdp -Rns firefox\n  \
                   multipkgdp -Ss firefox\n  \
                   multipkgdp -Syu\n  \
                   multipkgdp -Q\n  \
-                  multipkgdp --backend apt -Ss firefox"
+                  multipkgdp --backend apt -Ss firefox\n  \
+                  multipkgdp --backend flatpak -S org.videolan.VLC\n  \
+                  multipkgdp --backend xbps --container -S firefox\n  \
+                  multipkgdp -Ss firefox                    # ищет во всех доступных бэкендах сразу\n  \
+                  multipkgdp --generate-completions zsh > _multipkgdp"
 )]
 struct Cli {
     /// Переопределить автоопределение бэкенда (должно стоять перед OP)
     #[arg(long, value_enum)]
     backend: Option<BackendKind>,
 
+    /// Выполнить операцию внутри distrobox-контейнера для выбранного бэкенда
+    /// вместо хоста — нужно для пакетов "чужого" дистрибутива (например xbps
+    /// на Arch). Контейнер создаётся автоматически при первом использовании.
+    #[arg(long)]
+    container: bool,
+
+    /// Вывести скрипт автодополнения для шелла в stdout и выйти
+    #[arg(long, value_enum)]
+    generate_completions: Option<Shell>,
+
     /// OP и его аргументы, например: -S firefox neovim
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     rest: Vec<String>,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    if let Some(shell) = cli.generate_completions {
+        let mut cmd = Cli::command();
+        let bin_name = cmd.get_name().to_string();
+        clap_complete::generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
+        return Ok(());
+    }
+
     let mut rest = cli.rest.into_iter();
-    let op = rest.next().expect("clap enforced non-empty `rest`");
+    let op = rest
+        .next()
+        .ok_or_else(|| anyhow!("не указана операция (например `-S` или `-Rns`)"))?;
     let op_args: Vec<String> = rest.collect();
 
     let action = parse_action(&op, op_args)?;
     let env = EnvInfo::detect()?;
+
+    // `-Ss` без явного `--backend` ищет сразу во всех доступных бэкендах —
+    // это и есть смысл "мульти-бэкенд" пакетного менеджера.
+    if let Action::Search { query } = &action
+        && cli.backend.is_none()
+        && !cli.container
+    {
+        return run_unified_search(&env, query);
+    }
 
     // Если пользователь не указал --backend и делает `-S <onepkg>`,
     // сначала поищем пакет по имени в бэкендах и предложим выбрать.
@@ -61,7 +100,22 @@ fn main() -> Result<()> {
             .unwrap_or_else(|| env.recommended_backend())
     };
 
-    let backend = backends::make_backend(backend_kind);
+    let exec = if cli.container {
+        let default_image = backend_kind.default_container_image().ok_or_else(|| {
+            anyhow!(
+                "`--container` не поддерживается для бэкенда `{}` (он не привязан к дистрибутиву)",
+                backend_kind.as_str()
+            )
+        })?;
+        let image = utils::container_image_for(backend_kind, default_image);
+        let name = backend_kind.container_name();
+        utils::ensure_distrobox_container(&name, &image)?;
+        Exec::Distrobox { container: name }
+    } else {
+        Exec::Local
+    };
+
+    let backend = backends::make_backend(backend_kind, exec);
     core::run(backend.as_ref(), &env, action)?;
     Ok(())
 }
@@ -91,11 +145,45 @@ fn single_package_name(action: &Action) -> Option<&str> {
     }
 }
 
+/// Ищет пакет во всех бэкендах, утилиты которых есть в PATH, и печатает
+/// результаты блоками, помеченными названием бэкенда.
+fn run_unified_search(env: &EnvInfo, query: &str) -> Result<()> {
+    let kinds = [
+        BackendKind::Pacman,
+        BackendKind::Apt,
+        BackendKind::Xbps,
+        BackendKind::Flatpak,
+    ];
+
+    let available: Vec<BackendKind> = kinds
+        .into_iter()
+        .filter(|k| backend_available(*k))
+        .collect();
+    if available.is_empty() {
+        return Err(anyhow!(
+            "не найдено ни одного установленного бэкенда (apt/pacman/xbps/flatpak) для поиска"
+        ));
+    }
+
+    for (i, kind) in available.iter().enumerate() {
+        if i > 0 {
+            println!();
+        }
+        println!("==> {}", kind.as_str());
+        let backend = backends::make_backend(*kind, Exec::Local);
+        if let Err(e) = backend.search(env, query) {
+            eprintln!("  (ошибка: {e})");
+        }
+    }
+    Ok(())
+}
+
 fn backend_available(kind: BackendKind) -> bool {
     match kind {
         BackendKind::Apt => utils::command_exists("apt-get") || utils::command_exists("apt"),
         BackendKind::Pacman => utils::command_exists("pacman"),
         BackendKind::Xbps => utils::command_exists("xbps-install"),
+        BackendKind::Flatpak => utils::command_exists("flatpak"),
     }
 }
 
@@ -121,6 +209,11 @@ fn search_preview(kind: BackendKind, query: &str) -> Result<Vec<String>> {
                 return Err(anyhow!("не найдено `xbps-query` в PATH"));
             }
             utils::run_cmd_capture_stdout("xbps-query", ["-Rs", query])?
+        }
+        BackendKind::Flatpak => {
+            return Err(anyhow!(
+                "предпросмотр поиска для flatpak не используется в интерактивном выборе"
+            ));
         }
     };
 
@@ -156,6 +249,7 @@ fn try_bootstrap_backend_tools(selected: BackendKind, env: &EnvInfo) -> Result<(
         BackendKind::Apt => &["apt", "dpkg"],
         BackendKind::Xbps => &["xbps"],
         BackendKind::Pacman => &[],
+        BackendKind::Flatpak => &["flatpak"],
     };
     if pkgs.is_empty() {
         return Ok(());
@@ -167,6 +261,7 @@ fn try_bootstrap_backend_tools(selected: BackendKind, env: &EnvInfo) -> Result<(
             BackendKind::Apt => "apt-get/apt",
             BackendKind::Xbps => "xbps-install",
             BackendKind::Pacman => "pacman",
+            BackendKind::Flatpak => "flatpak",
         },
         pkgs.join(" ")
     );
