@@ -2,110 +2,53 @@ mod backends;
 mod core;
 mod utils;
 
-use anyhow::{anyhow, Result};
+use crate::core::action::parse_action;
 use crate::core::{Action, BackendKind, EnvInfo};
+use anyhow::{Result, anyhow};
+use clap::Parser;
 use std::io::{IsTerminal, Write};
 
-fn print_help(bin: &str) {
-    eprintln!(
-        r#"Использование:
-  {bin} [--backend <apt|pacman|xbps>] <OP> [ARGS...]
+/// Pacman-style CLI, маршрутизирующий операции в apt/pacman/xbps.
+#[derive(Parser, Debug)]
+#[command(
+    name = "multipkgdp",
+    after_help = "Где OP — pacman-style операция:\n  \
+                  -S <pkg...>         установить пакет(ы)\n  \
+                  -R... <pkg...>      удалить пакет(ы) (например: -Rns)\n  \
+                  -Ss <query>         поиск в репозиториях\n  \
+                  -Syu                обновление системы/индексов (зависит от бэкенда)\n  \
+                  -Q                  список установленных пакетов\n\n\
+                  `--backend` (если используется) должен стоять перед OP.\n\n\
+                  Примеры:\n  \
+                  multipkgdp -S firefox\n  \
+                  multipkgdp -Rns firefox\n  \
+                  multipkgdp -Ss firefox\n  \
+                  multipkgdp -Syu\n  \
+                  multipkgdp -Q\n  \
+                  multipkgdp --backend apt -Ss firefox"
+)]
+struct Cli {
+    /// Переопределить автоопределение бэкенда (должно стоять перед OP)
+    #[arg(long, value_enum)]
+    backend: Option<BackendKind>,
 
-Где OP — pacman-style операция:
-  -S <pkg...>         установить пакет(ы)
-  -R... <pkg...>      удалить пакет(ы) (например: -Rns)
-  -Ss <query>         поиск в репозиториях
-  -Syu                обновление системы/индексов (зависит от бэкенда)
-  -Q                  список установленных пакетов
-
-Примеры:
-  {bin} -S firefox
-  {bin} -Rns firefox
-  {bin} -Ss firefox
-  {bin} -Syu
-  {bin} -Q
-  {bin} --backend apt -Ss firefox
-"#
-    );
+    /// OP и его аргументы, например: -S firefox neovim
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+    rest: Vec<String>,
 }
 
 fn main() -> Result<()> {
-    let mut backend_override: Option<BackendKind> = None;
-    let mut op: Option<String> = None;
-    let mut op_args: Vec<String> = Vec::new();
+    let cli = Cli::parse();
+    let mut rest = cli.rest.into_iter();
+    let op = rest.next().expect("clap enforced non-empty `rest`");
+    let op_args: Vec<String> = rest.collect();
 
-    let mut it = std::env::args();
-    let bin = it.next().unwrap_or_else(|| "multipkgdp".to_string());
-
-    while let Some(a) = it.next() {
-        if a == "--help" || a == "-h" {
-            print_help(&bin);
-            return Ok(());
-        }
-
-        if a == "--backend" {
-            let v = it
-                .next()
-                .ok_or_else(|| anyhow!("ожидалось значение после `--backend`"))?;
-            backend_override = Some(parse_backend_kind(&v)?);
-            continue;
-        }
-        if let Some(v) = a.strip_prefix("--backend=") {
-            backend_override = Some(parse_backend_kind(v)?);
-            continue;
-        }
-
-        if op.is_none() && a.starts_with('-') {
-            op = Some(a);
-            continue;
-        }
-
-        op_args.push(a);
-    }
-
-    let op = op.ok_or_else(|| {
-        print_help(&bin);
-        anyhow!("не указана операция (например `-S` или `-Rns`)")
-    })?;
-
+    let action = parse_action(&op, op_args)?;
     let env = EnvInfo::detect()?;
-
-    let op = op.as_str();
-    let action = match op {
-        "-S" => {
-            if op_args.is_empty() {
-                return Err(anyhow!("ожидался хотя бы один пакет после `-S`"));
-            }
-            Action::Install { packages: op_args }
-        }
-        op if op.starts_with("-R") => {
-            // Принимаем любые варианты `-R...` как remove. Семантику (n/s/...) можно
-            // расширить позже, когда появятся флаги удаления в Backend API.
-            if op_args.is_empty() {
-                return Err(anyhow!("ожидался хотя бы один пакет после `{op}`"));
-            }
-            Action::Remove { packages: op_args }
-        }
-        "-Ss" => {
-            let query = op_args
-                .first()
-                .ok_or_else(|| anyhow!("ожидался запрос после `-Ss`"))?
-                .to_string();
-            Action::Search { query }
-        }
-        "-Syu" => Action::Update,
-        "-Q" => Action::List,
-        _ => {
-            return Err(anyhow!(
-                "неизвестная операция `{}`. Поддержано: `-S`, `-R...` (например `-Rns`), `-Ss`, `-Syu`, `-Q`",
-                op
-            ))
-        }
-    };
 
     // Если пользователь не указал --backend и делает `-S <onepkg>`,
     // сначала поищем пакет по имени в бэкендах и предложим выбрать.
-    let backend_kind = if backend_override.is_none()
+    let backend_kind = if cli.backend.is_none()
         && matches!(action, Action::Install { .. })
         && is_single_package_install(&action)
         && interactive_input_available()
@@ -113,7 +56,7 @@ fn main() -> Result<()> {
         let pkg = single_package_name(&action).expect("checked above");
         choose_backend_interactive(&env, pkg)?
     } else {
-        backend_override
+        cli.backend
             .or_else(utils::load_config_backend)
             .unwrap_or_else(|| env.recommended_backend())
     };
@@ -123,24 +66,15 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn parse_backend_kind(s: &str) -> Result<BackendKind> {
-    match s.to_ascii_lowercase().as_str() {
-        "apt" => Ok(BackendKind::Apt),
-        "pacman" => Ok(BackendKind::Pacman),
-        "xbps" => Ok(BackendKind::Xbps),
-        _ => Err(anyhow!(
-            "неизвестный бэкенд `{}` (ожидалось: apt|pacman|xbps)",
-            s
-        )),
-    }
-}
-
 fn interactive_input_available() -> bool {
     if std::io::stdin().is_terminal() {
         return true;
     }
     // Иногда stdin не TTY (редирект/IDE), но /dev/tty доступен.
-    std::fs::OpenOptions::new().read(true).open("/dev/tty").is_ok()
+    std::fs::OpenOptions::new()
+        .read(true)
+        .open("/dev/tty")
+        .is_ok()
 }
 
 fn is_single_package_install(action: &Action) -> bool {
@@ -150,7 +84,7 @@ fn is_single_package_install(action: &Action) -> bool {
     }
 }
 
-fn single_package_name<'a>(action: &'a Action) -> Option<&'a str> {
+fn single_package_name(action: &Action) -> Option<&str> {
     match action {
         Action::Install { packages } => packages.first().map(|s| s.as_str()),
         _ => None,
@@ -262,20 +196,20 @@ fn choose_backend_interactive(env: &EnvInfo, pkg: &str) -> Result<BackendKind> {
     let mut apt_hits: Option<usize> = None;
     let mut xbps_hits: Option<usize> = None;
 
-    if backend_available(BackendKind::Pacman) {
-        if let Ok(lines) = search_preview(BackendKind::Pacman, pkg) {
-            pacman_hits = Some(lines.len());
-        }
+    if backend_available(BackendKind::Pacman)
+        && let Ok(lines) = search_preview(BackendKind::Pacman, pkg)
+    {
+        pacman_hits = Some(lines.len());
     }
-    if backend_available(BackendKind::Apt) {
-        if let Ok(lines) = search_preview(BackendKind::Apt, pkg) {
-            apt_hits = Some(lines.len());
-        }
+    if backend_available(BackendKind::Apt)
+        && let Ok(lines) = search_preview(BackendKind::Apt, pkg)
+    {
+        apt_hits = Some(lines.len());
     }
-    if backend_available(BackendKind::Xbps) {
-        if let Ok(lines) = search_preview(BackendKind::Xbps, pkg) {
-            xbps_hits = Some(lines.len());
-        }
+    if backend_available(BackendKind::Xbps)
+        && let Ok(lines) = search_preview(BackendKind::Xbps, pkg)
+    {
+        xbps_hits = Some(lines.len());
     }
 
     eprintln!("\nВыбери репозиторий/дистрибутив (бэкенд) для установки:");

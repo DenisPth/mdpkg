@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 use std::process::{Command, Stdio};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::Deserialize;
 
 use crate::core::BackendKind;
@@ -19,12 +19,11 @@ struct Config {
 pub fn load_config_backend() -> Option<BackendKind> {
     let candidates = config_candidates();
     for p in candidates {
-        if let Ok(s) = std::fs::read_to_string(&p) {
-            if let Ok(cfg) = serde_yaml::from_str::<Config>(&s) {
-                if cfg.backend.is_some() {
-                    return cfg.backend;
-                }
-            }
+        if let Ok(s) = std::fs::read_to_string(&p)
+            && let Ok(cfg) = serde_yaml::from_str::<Config>(&s)
+            && cfg.backend.is_some()
+        {
+            return cfg.backend;
         }
     }
     None
@@ -105,4 +104,28 @@ where
     }
 
     run_cmd("sudo", full)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_backend_parses_from_yaml() {
+        let cfg: Config = serde_yaml::from_str("backend: pacman\n").unwrap();
+        assert_eq!(cfg.backend, Some(BackendKind::Pacman));
+    }
+
+    #[test]
+    fn config_backend_missing_field_is_none() {
+        let cfg: Config = serde_yaml::from_str("something_else: true\n").unwrap();
+        assert_eq!(cfg.backend, None);
+    }
+
+    #[test]
+    fn command_exists_finds_a_common_binary() {
+        // `sh` should exist on any POSIX system the tests run on.
+        assert!(command_exists("sh"));
+        assert!(!command_exists("definitely-not-a-real-command-xyz"));
+    }
 }

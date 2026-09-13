@@ -48,12 +48,14 @@ need_cmd() {
 
 need_cmd cargo
 
+ALIASES="mdpkg mpdpg"
+
 if [ "$MODE" = "uninstall" ]; then
-  echo "Удаляю из $BIN_DIR: mdpkg mpdpg multipkgdp"
+  echo "Удаляю из $BIN_DIR: multipkgdp $ALIASES"
   if [ "$(id -u)" -eq 0 ] || [ -w "$BIN_DIR" ] 2>/dev/null; then
-    rm -f "$BIN_DIR/mdpkg" "$BIN_DIR/mpdpg" "$BIN_DIR/multipkgdp"
+    rm -f "$BIN_DIR/multipkgdp" $(for a in $ALIASES; do echo "$BIN_DIR/$a"; done)
   else
-    sudo rm -f "$BIN_DIR/mdpkg" "$BIN_DIR/mpdpg" "$BIN_DIR/multipkgdp"
+    sudo rm -f "$BIN_DIR/multipkgdp" $(for a in $ALIASES; do echo "$BIN_DIR/$a"; done)
   fi
   echo "Готово."
   exit 0
@@ -65,13 +67,11 @@ cargo build --release
 
 echo "Устанавливаю в $BIN_DIR..."
 if [ "$(id -u)" -eq 0 ] || [ -w "$BIN_DIR" ] 2>/dev/null; then
-  install -Dm755 "./target/release/mdpkg" "$BIN_DIR/mdpkg"
-  install -Dm755 "./target/release/mpdpg" "$BIN_DIR/mpdpg"
   install -Dm755 "./target/release/multipkgdp" "$BIN_DIR/multipkgdp"
+  for a in $ALIASES; do ln -sf multipkgdp "$BIN_DIR/$a"; done
 else
-  sudo install -Dm755 "./target/release/mdpkg" "$BIN_DIR/mdpkg"
-  sudo install -Dm755 "./target/release/mpdpg" "$BIN_DIR/mpdpg"
   sudo install -Dm755 "./target/release/multipkgdp" "$BIN_DIR/multipkgdp"
+  for a in $ALIASES; do sudo ln -sf multipkgdp "$BIN_DIR/$a"; done
 fi
 
 echo "Проверка:"

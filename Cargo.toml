@@ -8,14 +8,6 @@ description = "Pacman-style CLI that routes package operations to multiple Linux
 name = "multipkgdp"
 path = "src/main.rs"
 
-[[bin]]
-name = "mpdpg"
-path = "src/main.rs"
-
-[[bin]]
-name = "mdpkg"
-path = "src/main.rs"
-
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

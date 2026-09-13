@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::core::{Backend, BackendKind, EnvInfo};
 use crate::utils::{command_exists, run_cmd, run_cmd_sudo};
@@ -33,10 +33,11 @@ impl Backend for PacmanBackend {
         run_cmd_sudo("pacman", args)
     }
 
-    fn remove(&self, _env: &EnvInfo, packages: &[String]) -> Result<()> {
+    fn remove(&self, _env: &EnvInfo, packages: &[String], flags: &str) -> Result<()> {
         self.ensure_available()?;
-        // pacman -Rns --noconfirm pkgs...
-        let mut args = vec!["-Rns".into(), "--noconfirm".into()];
+        // pacman -R<flags> --noconfirm pkgs... — суффикс пробрасывается как ввёл
+        // пользователь (pacman нативно понимает любые комбинации n/s/c/u).
+        let mut args = vec![format!("-R{flags}"), "--noconfirm".into()];
         args.extend(packages.iter().cloned());
         run_cmd_sudo("pacman", args)
     }
