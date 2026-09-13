@@ -1,3 +1,14 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="multipkgdp — one CLI for apt, pacman, xbps" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/DenisPth/mdpkg/actions/workflows/ci.yml"><img src="https://github.com/DenisPth/mdpkg/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/DenisPth/mdpkg/releases/latest"><img src="https://img.shields.io/github/v/release/DenisPth/mdpkg?sort=semver" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/rust-2024%20edition-orange.svg" alt="Rust 2024 edition">
+</p>
+
 # multipkgdp — Multi-Backend Package Manager / Мультипакетный менеджер
 
 **multipkgdp** — это универсальный CLI‑пакетный менеджер для Linux, который умеет работать с разными backend'ами: `apt` (Debian/Ubuntu), `pacman` (Arch), `xbps` (Void) и потенциально другими.  
@@ -26,7 +37,11 @@ It provides a unified CLI over system package managers such as:
   an extra `autoremove` pass; `xbps` always does a recursive removal regardless
   of the suffix.
 
-### Installation (from sources)
+### Installation
+
+Prebuilt binaries: grab the latest `.tar.gz` from the [Releases page](https://github.com/DenisPth/mdpkg/releases/latest), extract it, and put `multipkgdp` (plus the `mdpkg`/`mpdpg` symlinks) on your `PATH`.
+
+From source:
 
 ```bash
 git clone https://github.com/DenisPth/mdpkg.git
@@ -68,7 +83,11 @@ multipkgdp --backend pacman -S firefox
   запускает дополнительный проход `autoremove`; `xbps` всегда делает
   рекурсивное удаление независимо от суффикса.
 
-### Установка (из исходников)
+### Установка
+
+Готовые бинарники: скачай последний `.tar.gz` со [страницы релизов](https://github.com/DenisPth/mdpkg/releases/latest), распакуй и положи `multipkgdp` (и симлинки `mdpkg`/`mpdpg`) в `PATH`.
+
+Из исходников:
 
 ```bash
 git clone https://github.com/DenisPth/mdpkg.git

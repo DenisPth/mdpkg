@@ -1,0 +1,40 @@
+<svg width="1200" height="260" viewBox="0 0 1200 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="multipkgdp — one CLI for apt, pacman, xbps">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b"/>
+      <stop offset="55%" stop-color="#312e81"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="260" fill="url(#bg)"/>
+
+  <circle cx="1080" cy="55" r="140" fill="#38bdf8" opacity="0.08"/>
+  <circle cx="1150" cy="210" r="90" fill="#818cf8" opacity="0.10"/>
+
+  <text x="60" y="118" font-family="'JetBrains Mono','Fira Code',Consolas,monospace" font-size="56" font-weight="700" fill="#f8fafc">multipkgdp</text>
+  <rect x="62" y="134" width="360" height="4" rx="2" fill="url(#accent)"/>
+
+  <text x="60" y="172" font-family="'JetBrains Mono','Fira Code',Consolas,monospace" font-size="20" fill="#cbd5e1">one pacman-style CLI for apt · pacman · xbps</text>
+
+  <g font-family="'JetBrains Mono','Fira Code',Consolas,monospace" font-size="17">
+    <rect x="60" y="196" width="230" height="40" rx="8" fill="#0b1120" stroke="#334155"/>
+    <text x="76" y="222" fill="#94a3b8">$ </text>
+    <text x="92" y="222" fill="#e2e8f0">mdpkg -S firefox</text>
+  </g>
+
+  <g font-family="'JetBrains Mono','Fira Code',Consolas,monospace" font-size="15" fill="#a5b4fc">
+    <rect x="310" y="196" width="70" height="40" rx="8" fill="#1e293b"/>
+    <text x="325" y="221">apt</text>
+
+    <rect x="392" y="196" width="95" height="40" rx="8" fill="#1e293b"/>
+    <text x="407" y="221">pacman</text>
+
+    <rect x="499" y="196" width="80" height="40" rx="8" fill="#1e293b"/>
+    <text x="514" y="221">xbps</text>
+  </g>
+</svg>
