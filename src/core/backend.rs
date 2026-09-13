@@ -10,6 +10,8 @@ pub enum BackendKind {
     Apt,
     Pacman,
     Xbps,
+    /// Универсальный, дистро-независимый бэкенд (Flathub).
+    Flatpak,
 }
 
 impl BackendKind {
@@ -18,7 +20,26 @@ impl BackendKind {
             BackendKind::Apt => "apt",
             BackendKind::Pacman => "pacman",
             BackendKind::Xbps => "xbps",
+            BackendKind::Flatpak => "flatpak",
         }
+    }
+
+    /// Образ-по-умолчанию для запуска этого бэкенда внутри distrobox-контейнера
+    /// (флаг `--container`) — так можно ставить, например, xbps-пакеты на Arch,
+    /// не рискуя хостовой системой. `None` — контейнеризация для этого бэкенда
+    /// не имеет смысла (сам по себе уже кроссдистрибутивный).
+    pub fn default_container_image(self) -> Option<&'static str> {
+        match self {
+            BackendKind::Apt => Some("debian:stable"),
+            BackendKind::Pacman => Some("archlinux:latest"),
+            BackendKind::Xbps => Some("ghcr.io/void-linux/void-glibc-busybox:latest"),
+            BackendKind::Flatpak => None,
+        }
+    }
+
+    /// Имя persistent-контейнера distrobox, используемого для этого бэкенда.
+    pub fn container_name(self) -> String {
+        format!("mdpkg-{}", self.as_str())
     }
 }
 

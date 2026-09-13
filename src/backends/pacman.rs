@@ -1,18 +1,19 @@
 use anyhow::{Result, anyhow};
 
-use crate::core::{Backend, BackendKind, EnvInfo};
-use crate::utils::{command_exists, run_cmd, run_cmd_sudo};
+use crate::core::{Backend, BackendKind, EnvInfo, Exec};
 
 #[derive(Debug, Default)]
-pub struct PacmanBackend;
+pub struct PacmanBackend {
+    exec: Exec,
+}
 
 impl PacmanBackend {
-    pub fn new() -> Self {
-        Self
+    pub fn with_exec(exec: Exec) -> Self {
+        Self { exec }
     }
 
     fn ensure_available(&self) -> Result<()> {
-        if command_exists("pacman") {
+        if self.exec.command_exists("pacman") {
             Ok(())
         } else {
             Err(anyhow!("не найдено `pacman` в PATH"))
@@ -30,7 +31,7 @@ impl Backend for PacmanBackend {
         // pacman -S --noconfirm pkgs...
         let mut args = vec!["-S".into(), "--noconfirm".into()];
         args.extend(packages.iter().cloned());
-        run_cmd_sudo("pacman", args)
+        self.exec.run_sudo("pacman", args)
     }
 
     fn remove(&self, _env: &EnvInfo, packages: &[String], flags: &str) -> Result<()> {
@@ -39,24 +40,24 @@ impl Backend for PacmanBackend {
         // пользователь (pacman нативно понимает любые комбинации n/s/c/u).
         let mut args = vec![format!("-R{flags}"), "--noconfirm".into()];
         args.extend(packages.iter().cloned());
-        run_cmd_sudo("pacman", args)
+        self.exec.run_sudo("pacman", args)
     }
 
     fn update(&self, _env: &EnvInfo) -> Result<()> {
         self.ensure_available()?;
         // pacman -Syu --noconfirm
-        run_cmd_sudo("pacman", ["-Syu", "--noconfirm"])
+        self.exec.run_sudo("pacman", ["-Syu", "--noconfirm"])
     }
 
     fn search(&self, _env: &EnvInfo, query: &str) -> Result<()> {
         self.ensure_available()?;
         // pacman -Ss QUERY
-        run_cmd("pacman", ["-Ss", query])
+        self.exec.run("pacman", ["-Ss", query])
     }
 
     fn list(&self, _env: &EnvInfo) -> Result<()> {
         self.ensure_available()?;
         // pacman -Q
-        run_cmd("pacman", ["-Q"])
+        self.exec.run("pacman", ["-Q"])
     }
 }

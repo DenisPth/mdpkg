@@ -10,23 +10,70 @@ pub fn command_exists(cmd: &str) -> bool {
     which::which(cmd).is_ok()
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct Config {
     #[serde(default)]
     backend: Option<BackendKind>,
+    /// Переопределение образа distrobox-контейнера по имени бэкенда
+    /// (`apt`/`pacman`/`xbps`), см. `--container`.
+    #[serde(default)]
+    container_images: std::collections::BTreeMap<String, String>,
+}
+
+fn load_config() -> Config {
+    for p in config_candidates() {
+        if let Ok(s) = std::fs::read_to_string(&p)
+            && let Ok(cfg) = serde_yaml::from_str::<Config>(&s)
+        {
+            return cfg;
+        }
+    }
+    Config::default()
 }
 
 pub fn load_config_backend() -> Option<BackendKind> {
-    let candidates = config_candidates();
-    for p in candidates {
-        if let Ok(s) = std::fs::read_to_string(&p)
-            && let Ok(cfg) = serde_yaml::from_str::<Config>(&s)
-            && cfg.backend.is_some()
-        {
-            return cfg.backend;
-        }
+    load_config().backend
+}
+
+/// Образ для `--container` с учётом пользовательского оверрайда в конфиге,
+/// иначе `default`.
+pub fn container_image_for(kind: BackendKind, default: &str) -> String {
+    load_config()
+        .container_images
+        .get(kind.as_str())
+        .cloned()
+        .unwrap_or_else(|| default.to_string())
+}
+
+/// Убеждается, что distrobox-контейнер с этим именем существует, создавая его
+/// при необходимости из указанного образа.
+pub fn ensure_distrobox_container(container: &str, image: &str) -> Result<()> {
+    if !command_exists("distrobox") {
+        return Err(anyhow!(
+            "не найден `distrobox` в PATH — установи его вместе с podman или docker, \
+             чтобы запускать пакетный менеджер другого дистрибутива в контейнере \
+             (https://github.com/89luca89/distrobox)"
+        ));
     }
-    None
+
+    let exists = Command::new("distrobox")
+        .args(["enter", container, "--", "true"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if exists {
+        return Ok(());
+    }
+
+    eprintln!("Контейнер `{container}` не найден, создаю (образ: {image})...");
+    run_cmd(
+        "distrobox",
+        ["create", "--image", image, "--name", container, "--yes"],
+    )
 }
 
 fn config_candidates() -> Vec<std::path::PathBuf> {
@@ -120,6 +167,16 @@ mod tests {
     fn config_backend_missing_field_is_none() {
         let cfg: Config = serde_yaml::from_str("something_else: true\n").unwrap();
         assert_eq!(cfg.backend, None);
+    }
+
+    #[test]
+    fn config_parses_container_image_overrides() {
+        let cfg: Config =
+            serde_yaml::from_str("container_images:\n  xbps: my-registry/void:latest\n").unwrap();
+        assert_eq!(
+            cfg.container_images.get("xbps").map(String::as_str),
+            Some("my-registry/void:latest")
+        );
     }
 
     #[test]
